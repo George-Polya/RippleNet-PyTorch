@@ -6,6 +6,8 @@ from sklearn.metrics import roc_auc_score, f1_score
 from prettytable import PrettyTable
 from evaluate import test
 from time import time
+from utils import get_feed_dict
+from helper import early_stopping
 
 def train(args, data_info, show_loss):
     train_data = data_info[0]
@@ -23,46 +25,49 @@ def train(args, data_info, show_loss):
         args.lr,
     )
 
-    for step in range(args.n_epoch):
-        # training
-        np.random.shuffle(train_data)
-        start = 0
-        train_s_t = time()
-        while start < train_data.shape[0]:
-            return_dict = model(*get_feed_dict(args, model, train_data, ripple_set, start, start + args.batch_size))
-            loss = return_dict["loss"]
+    cur_best_pre_0 = 0
+    stopping_step = 0
+    should_stop = False
+    with open(f"./training_log/RippleNet_{args.dataset}_{args.lr}.txt","w") as f:
+        for step in range(args.n_epoch):
+            # training
+            np.random.shuffle(train_data)
+            start = 0
+            train_s_t = time()
+            while start < train_data.shape[0]:
+                return_dict = model(*get_feed_dict(args, model, train_data, ripple_set, start, start + args.batch_size))
+                loss = return_dict["loss"]
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-            start += args.batch_size
-            if show_loss:
-                print('%.1f%% %.4f' % (start / train_data.shape[0] * 100, loss.item()))
-        train_e_t = time()
-        # evaluation
+                start += args.batch_size
+                if show_loss:
+                    print('%.1f%% %.4f' % (start / train_data.shape[0] * 100, loss.item()))
+            train_e_t = time()
+            # evaluation
 
-        test_s_t = time()
-        ret = test(args, model, data_info)
-        test_e_t = time()
-        result_table = PrettyTable()
-        result_table.field_names = ["Epoch", "training time", "tesing time", "Loss", "recall", "ndcg", "precision", "hit_ratio"]
-        result_table.add_row(
-            [step, train_e_t - train_s_t, test_e_t - test_s_t, loss.item(), ret['recall'], ret['ndcg'], ret['precision'], ret['hit_ratio']]
-        )
+            test_s_t = time()
+            ret = test(args, model, data_info)
+            test_e_t = time()
+            result_table = PrettyTable()
+            result_table.field_names = ["Epoch", "training time", "tesing time", "Loss", "recall", "ndcg", "precision", "hit_ratio"]
+            result_table.add_row(
+                [step, train_e_t - train_s_t, test_e_t - test_s_t, loss.item(), ret['recall'], ret['ndcg'], ret['precision'], ret['hit_ratio']]
+            )
 
-        print(result_table)
-        # train_auc, train_acc = evaluation(args, model, train_data, ripple_set, args.batch_size)
-        # eval_auc, eval_acc = evaluation(args, model, eval_data, ripple_set, args.batch_size)
-        # test_auc, test_acc = evaluation(args, model, test_data, ripple_set, args.batch_size)
-        # eval_auc, eval_f1 = ctr_eval(args, model, eval_data, ripple_set, args.batch_size)
-        # test_auc, test_f1 = ctr_eval(args, model, test_data, ripple_set, args.batch_size)
-        # ctr_info = 'epoch {}    eval auc: {:.4f} f1: {:.4f}    test auc: {:.4f} f1: {:.4f}'.format(step, eval_auc, eval_f1, test_auc, test_f1)
-        # print(ctr_info)
-        
-        # if args.show_topk:
-        #     print(topk_eval(args, model, train_data, test_data, ripple_set))
-        
+            cur_best_pre_0, stopping_step, should_stop = early_stopping(ret['recall'][0], cur_best_pre_0,
+                                                                                stopping_step, expected_order='acc',
+                                                                                flag_step=10)
+            if ret['recall'][0] == cur_best_pre_0 and args.save:
+                        torch.save(model.state_dict(), args.out_dir + 'model_' + args.dataset + '.ckpt')
+            print(result_table)
+            f.write(str(result_table)+"\n")
+
+        print('early stopping at %d, recall@20:%.4f' % (step, cur_best_pre_0))
+        f.write('early stopping at %d, recall@20:%.4f' % (step, cur_best_pre_0)+"\n")
+            
 
 def ctr_eval(args, model, data, ripple_set, batch_size):
     auc_list = []
@@ -85,22 +90,6 @@ def ctr_eval(args, model, data, ripple_set, batch_size):
     f1 = float(np.mean(f1_list))
     return auc, f1
 
-
-def get_feed_dict(args, model, data, ripple_set, start, end):
-    items = torch.LongTensor(data[start:end, 1])
-    labels = torch.LongTensor(data[start:end, 2])
-    memories_h, memories_r, memories_t = [], [], []
-    for i in range(args.n_hop):
-        memories_h.append(torch.LongTensor([ripple_set[user][i][0] for user in data[start:end, 0]]))
-        memories_r.append(torch.LongTensor([ripple_set[user][i][1] for user in data[start:end, 0]]))
-        memories_t.append(torch.LongTensor([ripple_set[user][i][2] for user in data[start:end, 0]]))
-    if args.use_cuda:
-        items = items.cuda()
-        labels = labels.cuda()
-        memories_h = list(map(lambda x: x.cuda(), memories_h))
-        memories_r = list(map(lambda x: x.cuda(), memories_r))
-        memories_t = list(map(lambda x: x.cuda(), memories_t))
-    return items, labels, memories_h, memories_r,memories_t
 
 
 def evaluation(args, model, data, ripple_set, batch_size):
@@ -127,37 +116,3 @@ def _show_recall_info(recall_zip):
     return res
 
 
-
-def _get_topk_feed_data(user, items):
-    res = list()
-    for item in items:
-        res.append([user,item])
-    return np.array(res)
-
-def _get_user_record(data, is_train):
-    user_history_dict = dict()
-    for rating in data:
-        user = rating[0]
-        item = rating[1]
-        label = rating[2]
-        if is_train or label == 1:
-            if user not in user_history_dict:
-                user_history_dict[user] = set()
-                # user_history_dict[user] = list()
-            user_history_dict[user].add(item)
-            # user_history_dict[user].append(item)
-    return user_history_dict
-
-def _get_item_record(data):
-    item_dict = dict()
-    for rating in data:
-        user = rating[0]
-        item = rating[1]
-        label = rating[2]
-
-        if label == 1:
-            if item not in item_dict:
-                item_dict[item] = set()
-            item_dict[item].add(user)
-
-    return item_dict

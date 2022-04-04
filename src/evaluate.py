@@ -9,37 +9,11 @@ import heapq
 from time import time
 # from train import *
 from parser import parse_args
+from utils import _get_item_record, _get_user_record, get_feed_dict
 cores = multiprocessing.cpu_count() // 2
 
 args = parse_args()
 
-def _get_user_record(data, is_train):
-    user_history_dict = dict()
-    for rating in data:
-        user = rating[0]
-        item = rating[1]
-        label = rating[2]
-        if is_train or label == 1:
-            if user not in user_history_dict:
-                user_history_dict[user] = set()
-                # user_history_dict[user] = list()
-            user_history_dict[user].add(item)
-            # user_history_dict[user].append(item)
-    return user_history_dict
-
-def _get_item_record(data):
-    item_dict = dict()
-    for rating in data:
-        user = rating[0]
-        item = rating[1]
-        label = rating[2]
-
-        if label == 1:
-            if item not in item_dict:
-                item_dict[item] = set()
-            item_dict[item].add(user)
-
-    return item_dict
 
 
 def ranklist_by_heapq(user_pos_test, test_items, rating, Ks):
@@ -130,25 +104,10 @@ def test_one_user(x):
 
 
 
-def get_feed_dict(args, model, data, ripple_set, start, end):
-    items = torch.LongTensor(data[start:end, 1])
-    labels = torch.LongTensor(data[start:end, 2])
-    memories_h, memories_r, memories_t = [], [], []
-    for i in range(args.n_hop):
-        memories_h.append(torch.LongTensor([ripple_set[user][i][0] for user in data[start:end, 0]]))
-        memories_r.append(torch.LongTensor([ripple_set[user][i][1] for user in data[start:end, 0]]))
-        memories_t.append(torch.LongTensor([ripple_set[user][i][2] for user in data[start:end, 0]]))
-    if args.use_cuda:
-        items = items.cuda()
-        labels = labels.cuda()
-        memories_h = list(map(lambda x: x.cuda(), memories_h))
-        memories_r = list(map(lambda x: x.cuda(), memories_r))
-        memories_t = list(map(lambda x: x.cuda(), memories_t))
-    return items, labels, memories_h, memories_r,memories_t
-
 def test(args, model, data_info):
     global Ks
-    Ks = [20, 40, 60, 80, 100]
+    Ks = args.Ks
+    
     result = {'precision': np.zeros(len(Ks)),
               'recall': np.zeros(len(Ks)),
               'ndcg': np.zeros(len(Ks)),
@@ -202,7 +161,7 @@ def test(args, model, data_info):
     
     for u_batch_id in range(n_user_batchs):
         start = u_batch_id * u_batch_size
-        end = (u_batch_id + 1) * u_batch_size
+        end = min((u_batch_id+1)*u_batch_size, n_test_users)
 
         user_list_batch = test_users[start: end]
         user_batch = torch.LongTensor(np.array(user_list_batch)).to(device)
@@ -222,8 +181,11 @@ def test(args, model, data_info):
                 item_emb = model.entity_emb(item_batch)
 
                 i_rate_batch = model.rating(user_emb, item_emb).detach().cpu()
-
+                # print(f"rate_batch.shape: {rate_batch[:, i_start:i_end].shape}")
+                # print(f"i_rate_batch.shape: {i_rate_batch.shape}")
                 rate_batch[:, i_start: i_end] = i_rate_batch
+                # print(f"len(user_batch) : {len(user_batch)}")
+                
                 i_count += i_rate_batch.shape[1]
 
             assert i_count == n_entity
