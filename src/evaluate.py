@@ -1,20 +1,19 @@
 from re import S
-from .metrics import *
-from .parser import parse_args
+from metrics import *
+# from main import parse_args
 
 import torch
 import numpy as np
 import multiprocessing
 import heapq
 from time import time
-
+# from train import *
+from parser import parse_args
+from utils import _get_item_record, _get_user_record, get_feed_dict
 cores = multiprocessing.cpu_count() // 2
 
 args = parse_args()
-Ks = eval(args.Ks)
-device = torch.device("cuda:" + str(args.gpu_id)) if args.cuda else torch.device("cpu")
-BATCH_SIZE = args.test_batch_size
-batch_test_flag = args.batch_test_flag
+
 
 
 def ranklist_by_heapq(user_pos_test, test_items, rating, Ks):
@@ -92,7 +91,7 @@ def test_one_user(x):
     # user u's items in the test set
     user_pos_test = test_user_set[u]
 
-    all_items = set(range(0, n_items))
+    all_items = set(range(0, n_entity))
 
     test_items = list(all_items - set(training_items))
 
@@ -104,18 +103,46 @@ def test_one_user(x):
     return get_performance(user_pos_test, r, auc, Ks)
 
 
-def test(model, user_dict, n_params):
+
+def test(args, model, data_info):
+    global Ks
+    Ks = args.Ks
+    
     result = {'precision': np.zeros(len(Ks)),
               'recall': np.zeros(len(Ks)),
               'ndcg': np.zeros(len(Ks)),
               'hit_ratio': np.zeros(len(Ks)),
               'auc': 0.}
+    # args = parse_args()
+    
+    device = torch.device("cuda")
+    BATCH_SIZE = args.batch_size
+    batch_test_flag = args.batch_size
 
-    global n_users, n_items
-    n_items = n_params['n_items']
-    n_users = n_params['n_users']
+    global n_entity
+    train_data = data_info[0]
+    eval_data = data_info[1]
+    test_data = data_info[2]
+    n_entity = data_info[3]
+    n_relation = data_info[4]
+    ripple_set = data_info[5]
 
-    global train_user_set, test_user_set
+    all_data = np.vstack([train_data, eval_data, test_data])
+
+    all_item_set = _get_item_record(all_data)
+    all_user_set = _get_user_record(all_data,True)
+
+    user_dict = {
+        "train_user_set" : _get_user_record(train_data, True),
+        "test_user_set" : _get_user_record(test_data, True)
+    }
+
+    n_items = len(all_user_set.keys())
+    n_users = len(all_item_set.keys())
+    n_nodes = n_entity + n_users
+
+    
+    global test_user_set, train_user_set
     train_user_set = user_dict['train_user_set']
     test_user_set = user_dict['test_user_set']
 
@@ -129,48 +156,48 @@ def test(model, user_dict, n_params):
     n_user_batchs = n_test_users // u_batch_size + 1
 
     count = 0
-    entity_emb, user_emb = model.get_embedding()
+    
         
     
     for u_batch_id in range(n_user_batchs):
         start = u_batch_id * u_batch_size
-        end = (u_batch_id + 1) * u_batch_size
+        end = min((u_batch_id+1)*u_batch_size, n_test_users)
 
         user_list_batch = test_users[start: end]
         user_batch = torch.LongTensor(np.array(user_list_batch)).to(device)
-        # u_g_embeddings = user_gcn_emb[user_batch]
+        user_emb = model.get_user_embeddings(*get_feed_dict(args, model, test_data, ripple_set, start, end))
 
         if batch_test_flag:
             # batch-item test
-            n_item_batchs = n_items // i_batch_size + 1
-            rate_batch = np.zeros(shape=(len(user_batch), n_items))
+            n_item_batchs = n_entity // i_batch_size + 1
+            rate_batch = np.zeros(shape=(len(user_batch), n_entity))
 
             i_count = 0
             for i_batch_id in range(n_item_batchs):
                 i_start = i_batch_id * i_batch_size
-                i_end = min((i_batch_id + 1) * i_batch_size, n_items)
+                i_end = min((i_batch_id + 1) * i_batch_size, n_entity)
 
                 item_batch = torch.LongTensor(np.array(range(i_start, i_end))).view(i_end-i_start).to(device)
-                # i_g_embddings = entity_gcn_emb[item_batch]
-                i_g_embeddings = entity_emb(item_batch)
+                item_emb = model.entity_emb(item_batch)
 
-                i_rate_batch = model.rating(i_g_embeddings, user_emb).detach().cpu()
-
+                i_rate_batch = model.rating(user_emb, item_emb).detach().cpu()
+                # print(f"rate_batch.shape: {rate_batch[:, i_start:i_end].shape}")
+                # print(f"i_rate_batch.shape: {i_rate_batch.shape}")
                 rate_batch[:, i_start: i_end] = i_rate_batch
+                # print(f"len(user_batch) : {len(user_batch)}")
+                
                 i_count += i_rate_batch.shape[1]
 
-            assert i_count == n_items
+            assert i_count == n_entity
         else:
             # all-item test
-            item_batch = torch.LongTensor(np.array(range(0, n_items))).view(n_items, -1).to(device)
-            # i_g_embddings = entity_gcn_emb[item_batch]
-            # rate_batch = model.rating(u_g_embeddings, i_g_embddings).detach().cpu()
-            rate_batch = model.rating().detach().cpu()
+            item_batch = torch.LongTensor(np.array(range(0, n_entity))).view(n_items, -1).to(device)
+            
+            rate_batch = model.rating(user_emb, item_emb).detach().cpu()
 
         user_batch_rating_uid = zip(rate_batch, user_list_batch)
         batch_result = pool.map(test_one_user, user_batch_rating_uid)
         count += len(batch_result)
-
         for re in batch_result:
             result['precision'] += re['precision']/n_test_users
             result['recall'] += re['recall']/n_test_users
