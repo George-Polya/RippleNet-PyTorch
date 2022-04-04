@@ -234,16 +234,15 @@ def test(args, model, data_info):
             rate_batch = model.rating(user_emb, item_emb).detach().cpu()
 
         user_batch_rating_uid = zip(rate_batch, user_list_batch)
-        for rating, uid in user_batch_rating_uid:
-            x = (rating, uid)
-            re = test_one_user(x)
-            result["precision"] = re["precision"] / n_test_users
-            result["recall"] = re["recall"] / n_test_users
-            result["ndcg"] = re["ndcg"] / n_test_users
-            result["hit_ratio"] = re["hit_ratio"] / n_test_users
-            result["auc"] = re["auc"] / n_test_users
-            count += 1
+        batch_result = pool.map(test_one_user, user_batch_rating_uid)
+        count += len(batch_result)
+        for re in batch_result:
+            result['precision'] += re['precision']/n_test_users
+            result['recall'] += re['recall']/n_test_users
+            result['ndcg'] += re['ndcg']/n_test_users
+            result['hit_ratio'] += re['hit_ratio']/n_test_users
+            result['auc'] += re['auc']/n_test_users
 
     assert count == n_test_users
-    # pool.close()
+    pool.close()
     return result
