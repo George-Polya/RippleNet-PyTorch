@@ -104,3 +104,7 @@ data/book/*
 !data/book/BX-Book-Ratings.csv
 !data/book/kg_rehashed.txt
 data/news/*
+
+data/naver/*
+!data/naver/ratings.dat
+
