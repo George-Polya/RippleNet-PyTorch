@@ -8,6 +8,9 @@ from evaluate import test
 from time import time
 from utils import get_feed_dict
 from helper import early_stopping
+from parser import parse_args
+
+args = parse_args()
 
 def train(args, data_info, show_loss):
     train_data = data_info[0]
@@ -57,16 +60,17 @@ def train(args, data_info, show_loss):
                 [step, train_e_t - train_s_t, test_e_t - test_s_t, loss.item(), ret['recall'], ret['ndcg'], ret['precision'], ret['hit_ratio']]
             )
 
-            cur_best_pre_0, stopping_step, should_stop = early_stopping(ret['recall'][0], cur_best_pre_0,
-                                                                                stopping_step, expected_order='acc',
-                                                                                flag_step=10)
+            # cur_best_pre_0, stopping_step, should_stop = early_stopping(ret['recall'][0], cur_best_pre_0,
+            #                                                                     stopping_step, expected_order='acc',
+            #                                                                     flag_step=10)
             if ret['recall'][0] == cur_best_pre_0 and args.save:
-                        torch.save(model.state_dict(), args.out_dir + 'model_' + args.dataset + '.ckpt')
+
+                torch.save(model.state_dict(), args.out_dir + 'model_' + args.dataset + '.ckpt')
             print(result_table)
             f.write(str(result_table)+"\n")
 
-        print('early stopping at %d, recall@20:%.4f' % (step, cur_best_pre_0))
-        f.write('early stopping at %d, recall@20:%.4f' % (step, cur_best_pre_0)+"\n")
+        # print('early stopping at %d, recall@20:%.4f' % (step, cur_best_pre_0))
+        # f.write('early stopping at %d, recall@20:%.4f' % (step, cur_best_pre_0)+"\n")
             
 
 def ctr_eval(args, model, data, ripple_set, batch_size):

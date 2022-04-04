@@ -1,1 +1,1 @@
-python main.py --n_epoch 10 --dataset movieLens
+python main.py --n_epoch 1000 --dataset naver-toy

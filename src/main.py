@@ -9,7 +9,7 @@ from parser import parse_args
 
 if __name__ == "__main__":
     global args, device
-    np.random.seed(555)
+    np.random.seed(2022)
     args = parse_args()
     device = torch.device("cuda:"+str(args.gpu_id)) if args.use_cuda else torch.device("cpu")
     show_loss = False
