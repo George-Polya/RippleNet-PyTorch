@@ -4,10 +4,10 @@ import numpy as np
 
 
 def load_data(args):
-    train_data, eval_data, test_data, user_history_dict = load_rating(args)
+    n_user, n_item, train_data, eval_data, test_data, user_history_dict = load_rating(args)
     n_entity, n_relation, kg = load_kg(args)
     ripple_set = get_ripple_set(args, kg, user_history_dict)
-    return train_data, eval_data, test_data, n_entity, n_relation, ripple_set
+    return n_user, n_item, train_data, eval_data, test_data, n_entity, n_relation, ripple_set
 
 
 def load_rating(args):
@@ -21,9 +21,10 @@ def load_rating(args):
         rating_np = np.loadtxt(rating_file + '.txt', dtype=np.int32)
         np.save(rating_file + '.npy', rating_np)
 
-    # n_user = len(set(rating_np[:, 0]))
-    # n_item = len(set(rating_np[:, 1]))
-    return dataset_split(rating_np)
+    n_user = len(set(rating_np[:, 0]))
+    n_item = len(set(rating_np[:, 1]))
+    train_data, eval_data, test_data, user_history_dict = dataset_split(rating_np)
+    return n_user, n_item, train_data, eval_data, test_data, user_history_dict
 
 
 def dataset_split(rating_np):
