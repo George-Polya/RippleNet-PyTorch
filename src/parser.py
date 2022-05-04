@@ -38,6 +38,11 @@ def parse_args():
     '''
 
     parser.add_argument('--use_cuda', type=bool, default=True, help='whether to use gpu')
+    parser.add_argument("--n_workers", type=int, default=4)
+    parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument("--world_size", type=int, default=2)
+    parser.add_argument("--DDP_backend", type=str, default="nccl")
+    
     args = parser.parse_args()
     return args
    

@@ -1,8 +1,12 @@
 import numpy as np
 import torch
-
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 from model import RippleNet
-
+from data_loader import CustomDataLoader, CustomDataset
+# from torch.utils.data.distributed import DistributedSampler
+# from torch.nn.parallel import DistributedDataParallel as DDP
+# import torch.distributed as dist
 
 def train(args, data_info, show_loss):
     train_data = data_info[0]
@@ -11,6 +15,8 @@ def train(args, data_info, show_loss):
     n_entity = data_info[3]
     n_relation = data_info[4]
     ripple_set = data_info[5]
+    # torch.cuda.set_device(args.local_rank)
+    # dist.init_process_group(backend=args.DDP_backend, world_size=args.world_size, rank=args.local_rank)
 
     model = RippleNet(args, n_entity, n_relation)
     if args.use_cuda:
@@ -19,22 +25,41 @@ def train(args, data_info, show_loss):
         filter(lambda p: p.requires_grad, model.parameters()),
         args.lr,
     )
+    
+    batch_size = args.batch_size // torch.cuda.device_count()
+
+    # dataset = CustomDataset(args, train_data, ripple_set)
+    # sampler = DistributedSampler(train_dataset,rank=args.local_rank, num_replicas=args.world_size)
+    dataloader = CustomDataLoader(dataset, batch_size=32, shuffle=False, sampler=None,
+                                  collate_fn=lambda batch:batch, pin_memory=False)
+                            
     for step in range(args.n_epoch):
         # training
         np.random.shuffle(train_data)
         start = 0
-
-        while start < train_data.shape[0]:
-            return_dict = model(*get_feed_dict(args, model, train_data, ripple_set, start, start + args.batch_size))
+        for idx, data in enumerate(dataloader):
+            # items, labels, memories_h, memories_r,memories_t = data
+            return_dict = model(*data)
             loss = return_dict["loss"]
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            start += args.batch_size
             if show_loss:
-                print('%.1f%% %.4f' % (start / train_data.shape[0] * 100, loss.item()))
+                print('%.1f%% %.4f' % (idx / train_data.shape[0] * 100, loss.item()))
+
+        # while start < train_data.shape[0]:
+        #     return_dict = model(*get_feed_dict(args, model, train_data, ripple_set, start, start + args.batch_size))
+        #     loss = return_dict["loss"]
+
+        #     optimizer.zero_grad()
+        #     loss.backward()
+        #     optimizer.step()
+
+        #     start += args.batch_size
+        #     if show_loss:
+        #         print('%.1f%% %.4f' % (start / train_data.shape[0] * 100, loss.item()))
 
         # evaluation
         train_auc, train_acc = evaluation(args, model, train_data, ripple_set, args.batch_size)
