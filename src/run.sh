@@ -1,1 +1,0 @@
-python main.py --n_epoch 1000 --dataset naver-toy
