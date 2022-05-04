@@ -38,7 +38,7 @@ class RippleNet(nn.Module):
         memories_t: list,
     ):
         # [batch size, dim]
-        self.item_embeddings = self.entity_emb(items)
+        item_embeddings = self.entity_emb(items)
         h_emb_list = []
         r_emb_list = []
         t_emb_list = []
@@ -54,10 +54,10 @@ class RippleNet(nn.Module):
             # [batch size, n_memory, dim]
             t_emb_list.append(self.entity_emb(memories_t[i]))
 
-        self.o_list, self.item_embeddings = self._key_addressing(
-            h_emb_list, r_emb_list, t_emb_list, self.item_embeddings
+        o_list, item_embeddings = self._key_addressing(
+            h_emb_list, r_emb_list, t_emb_list, item_embeddings
         )
-        scores = self.predict(self.item_embeddings, self.o_list)
+        scores = self.predict(item_embeddings, o_list)
 
         return_dict = self._compute_loss(
             scores, labels, h_emb_list, t_emb_list, r_emb_list
@@ -96,30 +96,28 @@ class RippleNet(nn.Module):
         o_list = []
         for hop in range(self.n_hop):
             # [batch_size, n_memory, dim, 1]
-            print(f"h_emb_list[{hop}].shape: {h_emb_list[hop].shape}")
             h_expanded = torch.unsqueeze(h_emb_list[hop], dim=3)
-            # print(f"h_expanded.shape: {h_expanded.shape}")
+
             # [batch_size, n_memory, dim]
             Rh = torch.squeeze(torch.matmul(r_emb_list[hop], h_expanded))
-            # print(f"Rh.shape: {Rh.shape}")
+
             # [batch_size, dim, 1]
             v = torch.unsqueeze(item_embeddings, dim=2)
-            # print(f"v.shape: {v.shape}")
+
             # [batch_size, n_memory]
             probs = torch.squeeze(torch.matmul(Rh, v))
-            # print(f"probs.shape: {probs.shape}")
+
             # [batch_size, n_memory]
             probs_normalized = F.softmax(probs, dim=1)
-            # print(f"probs_normalized.shape: {probs_normalized.shape}")
+
             # [batch_size, n_memory, 1]
             probs_expanded = torch.unsqueeze(probs_normalized, dim=2)
-            # print(f"probs_expanded.shape: {probs_expanded.shape}")
+
             # [batch_size, dim]
             o = (t_emb_list[hop] * probs_expanded).sum(dim=1)
-            # print(f"o.shape: {h_expanded.shape}")
+
             item_embeddings = self._update_item_embedding(item_embeddings, o)
             o_list.append(o)
-            # print("------")
         return o_list, item_embeddings
 
     def _update_item_embedding(self, item_embeddings, o):
@@ -136,52 +134,14 @@ class RippleNet(nn.Module):
         return item_embeddings
 
     def predict(self, item_embeddings, o_list):
-        user_embeddings = o_list[-1]
+        y = o_list[-1]
         if self.using_all_hops:
             for i in range(self.n_hop - 1):
-                user_embeddings += o_list[i]
+                y += o_list[i]
 
         # [batch_size]
-        scores = (item_embeddings * user_embeddings).sum(dim=1)
+        scores = (item_embeddings * y).sum(dim=1)
         return torch.sigmoid(scores)
-
-    def get_user_embeddings(self, items, labels, memories_h, memories_r, memories_t):
-                # [batch size, dim]
-        item_embeddings = self.entity_emb(items)
-        h_emb_list = []
-        r_emb_list = []
-        t_emb_list = []
-        for i in range(self.n_hop):
-            # [batch size, n_memory, dim]
-            h_emb_list.append(self.entity_emb(memories_h[i]))
-            # [batch size, n_memory, dim, dim]
-            r_emb_list.append(
-                self.relation_emb(memories_r[i]).view(
-                    -1, self.n_memory, self.dim, self.dim
-                )
-            )
-            # [batch size, n_memory, dim]
-            t_emb_list.append(self.entity_emb(memories_t[i]))
-
-        o_list, item_embeddings = self._key_addressing(
-            h_emb_list, r_emb_list, t_emb_list, item_embeddings
-        )
-
-        user_embeddings = o_list[-1]
-
-        if self.using_all_hops:
-            for i in range(self.n_hop - 1):
-                user_embeddings+=o_list[i]
-        return user_embeddings
-        
-        
-        
-    
-    def rating(self,  user_embeddings, item_embeddings):
-        
-        rating = user_embeddings @ item_embeddings.T
-        return rating
- 
 
     def evaluate(self, items, labels, memories_h, memories_r, memories_t):
         return_dict = self.forward(items, labels, memories_h, memories_r, memories_t)

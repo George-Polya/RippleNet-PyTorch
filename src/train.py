@@ -19,11 +19,11 @@ def train(args, data_info, show_loss):
         filter(lambda p: p.requires_grad, model.parameters()),
         args.lr,
     )
-
     for step in range(args.n_epoch):
         # training
         np.random.shuffle(train_data)
         start = 0
+
         while start < train_data.shape[0]:
             return_dict = model(*get_feed_dict(args, model, train_data, ripple_set, start, start + args.batch_size))
             loss = return_dict["loss"]
