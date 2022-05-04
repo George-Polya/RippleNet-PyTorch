@@ -96,7 +96,7 @@ class RippleNet(nn.Module):
         o_list = []
         for hop in range(self.n_hop):
             # [batch_size, n_memory, dim, 1]
-            print(f"h_emb_list[hop].shape: {h_emb_list[hop].shape}")
+            # print(f"h_emb_list[hop].shape: {h_emb_list[hop].shape}")
             h_expanded = torch.unsqueeze(h_emb_list[hop], dim=3)
 
             # [batch_size, n_memory, dim]

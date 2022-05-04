@@ -49,17 +49,6 @@ def train(args, data_info, show_loss):
             if show_loss:
                 print('%.1f%% %.4f' % (idx / train_data.shape[0] * 100, loss.item()))
 
-        # while start < train_data.shape[0]:
-        #     return_dict = model(*get_feed_dict(args, model, train_data, ripple_set, start, start + args.batch_size))
-        #     loss = return_dict["loss"]
-
-        #     optimizer.zero_grad()
-        #     loss.backward()
-        #     optimizer.step()
-
-        #     start += args.batch_size
-        #     if show_loss:
-        #         print('%.1f%% %.4f' % (start / train_data.shape[0] * 100, loss.item()))
 
         # evaluation
         train_auc, train_acc = evaluation(args, model, train_data, ripple_set, args.batch_size)
