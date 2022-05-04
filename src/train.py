@@ -4,9 +4,9 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 from model import RippleNet
 from data_loader import CustomDataLoader, CustomDataset
-# from torch.utils.data.distributed import DistributedSampler
-# from torch.nn.parallel import DistributedDataParallel as DDP
-# import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
 
 def train(args, data_info, show_loss):
     train_data = data_info[0]
@@ -15,8 +15,8 @@ def train(args, data_info, show_loss):
     n_entity = data_info[3]
     n_relation = data_info[4]
     ripple_set = data_info[5]
-    # torch.cuda.set_device(args.local_rank)
-    # dist.init_process_group(backend=args.DDP_backend, world_size=args.world_size, rank=args.local_rank)
+    torch.cuda.set_device(args.local_rank)
+    dist.init_process_group(backend=args.DDP_backend, world_size=args.world_size, rank=args.local_rank)
 
     model = RippleNet(args, n_entity, n_relation)
     if args.use_cuda:
@@ -28,11 +28,14 @@ def train(args, data_info, show_loss):
     
     batch_size = args.batch_size // torch.cuda.device_count()
 
-    # dataset = CustomDataset(args, train_data, ripple_set)
-    # sampler = DistributedSampler(train_dataset,rank=args.local_rank, num_replicas=args.world_size)
-    dataloader = CustomDataLoader(dataset, batch_size=32, shuffle=False, sampler=None,
+    dataset = CustomDataset(args, train_data, ripple_set)
+    sampler = DistributedSampler(dataset,rank=args.local_rank, num_replicas=args.world_size)
+    dataloader = CustomDataLoader(dataset, batch_size=32, shuffle=False, sampler=sampler,
                                   collate_fn=lambda batch:batch, pin_memory=False)
-                            
+    
+
+    model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+    
     for step in range(args.n_epoch):
         # training
         np.random.shuffle(train_data)
