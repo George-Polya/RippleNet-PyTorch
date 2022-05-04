@@ -28,9 +28,9 @@ def train(args, data_info, show_loss):
     
     batch_size = args.batch_size // torch.cuda.device_count()
 
-    # dataset = CustomDataset(args, train_data, ripple_set)
+    dataset = CustomDataset(args, train_data, ripple_set)
     # sampler = DistributedSampler(train_dataset,rank=args.local_rank, num_replicas=args.world_size)
-    dataloader = CustomDataLoader(dataset, batch_size=32, shuffle=False, sampler=None,
+    dataloader = CustomDataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler=None,
                                   collate_fn=lambda batch:batch, pin_memory=False)
                             
     for step in range(args.n_epoch):
